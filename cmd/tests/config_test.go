@@ -514,7 +514,7 @@ func TestApplyDefaults(t *testing.T) {
 			},
 			want: cmd.Config{
 				InputDir:     "src",
-				OutputFile:   filepath.Join("src", "corpus-out.txt.gz"),
+				OutputFile:   filepath.Join(".", "corpus-out.txt.gz"),
 				IncludeGlobs: cmd.DefaultConfig().IncludeGlobs,
 				ExcludeGlobs: cmd.DefaultConfig().ExcludeGlobs,
 				Gzip:         true,
@@ -529,7 +529,7 @@ func TestApplyDefaults(t *testing.T) {
 			},
 			want: cmd.Config{
 				InputDir:     "/custom",
-				OutputFile:   filepath.Join("/custom", "out.txt"),
+				OutputFile:   filepath.Join(".", "out.txt"),
 				IncludeGlobs: []string{"**/*.py"},
 				ExcludeGlobs: cmd.DefaultConfig().ExcludeGlobs,
 			},

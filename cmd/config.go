@@ -208,11 +208,6 @@ func ApplyDefaults(config Config) Config {
 		config.OutputFile += ".gz"
 	}
 
-	// Make output file path relative to input directory if not absolute
-	if !filepath.IsAbs(config.OutputFile) {
-		config.OutputFile = filepath.Join(config.InputDir, config.OutputFile)
-	}
-
 	// Apply default globs if empty
 	if config.IncludeGlobs == nil {
 		config.IncludeGlobs = defaults.IncludeGlobs

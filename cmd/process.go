@@ -42,6 +42,17 @@ func ProcessDirectory(config Config) error {
 	// Apply defaults for empty fields
 	config = ApplyDefaults(config)
 
+	// Get current working directory
+	cwd, cwdErr := os.Getwd()
+	if cwdErr != nil {
+		return fmt.Errorf("error getting current working directory: %w", cwdErr)
+	}
+
+	// Make output file path relative to current working directory if not absolute
+	if !filepath.IsAbs(config.OutputFile) {
+		config.OutputFile = filepath.Join(cwd, config.OutputFile)
+	}
+
 	// Validate input directory first
 	if err := validateConfig(&config); err != nil {
 		return err
