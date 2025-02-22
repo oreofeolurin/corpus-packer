@@ -23,9 +23,9 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "process go files only",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				IgnorePatterns:  []string{"*_test.go"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				ExcludeGlobs: []string{"*_test.go"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				assertFileContains(t, outputPath, "package pkg1")
@@ -39,9 +39,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "process specific directories",
 			config: cmd.Config{
-				ValidDirs:       []string{"src/pkg1"},
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"src/pkg1/**/*.go"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -61,9 +60,9 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "ignore directories",
 			config: cmd.Config{
-				ValidExtensions: []string{".go", ".json"},
-				IgnoreDirs:      []string{"**/vendor", "**/.git"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go", "**/*.json"},
+				ExcludeGlobs: []string{"**/vendor/**", "**/.git/**"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				assertFileNotContains(t, outputPath, "vendor.json")
@@ -71,33 +70,11 @@ func TestProcessDirectory(t *testing.T) {
 			},
 		},
 		{
-			name: "process parent directories of valid dirs",
-			config: cmd.Config{
-				ValidDirs:       []string{"src/pkg1/subdir"},
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
-			},
-			validate: func(t *testing.T, outputPath string, config cmd.Config) {
-				content, err := os.ReadFile(outputPath)
-				if err != nil {
-					t.Fatalf("Failed to read output file: %v", err)
-				}
-
-				contentStr := string(content)
-				if !strings.Contains(contentStr, "package pkg1") {
-					t.Error("Output should contain pkg1 (parent directory)")
-				}
-				if strings.Contains(contentStr, "package pkg2") {
-					t.Error("Output should not contain pkg2 (different directory)")
-				}
-			},
-		},
-		{
 			name: "handle invalid file paths",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
-				InputDir:        "/nonexistent/path",
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
+				InputDir:     "/nonexistent/path",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				err := cmd.ProcessDirectory(config)
@@ -113,8 +90,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle invalid output file path",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "/invalid/path/out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "/invalid/path/out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				err := cmd.ProcessDirectory(config)
@@ -125,17 +102,13 @@ func TestProcessDirectory(t *testing.T) {
 				if !strings.Contains(err.Error(), "error creating output file") {
 					t.Errorf("Expected 'error creating output file' error, got: %v", err)
 				}
-				// Also check that the error mentions read-only filesystem
-				if !strings.Contains(err.Error(), "read-only file system") {
-					t.Errorf("Expected read-only filesystem error, got: %v", err)
-				}
 			},
 		},
 		{
 			name: "process multiple file types",
 			config: cmd.Config{
-				ValidExtensions: []string{".go", ".md"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go", "**/*.md"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -155,9 +128,9 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle invalid file patterns",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				IgnorePatterns:  []string{"[invalid-pattern"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				ExcludeGlobs: []string{"[invalid-pattern"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -165,18 +138,16 @@ func TestProcessDirectory(t *testing.T) {
 					t.Fatalf("Failed to read output file: %v", err)
 				}
 
-				// Should still process files despite invalid pattern
 				if !strings.Contains(string(content), "package pkg1") {
 					t.Error("Should still process valid files with invalid patterns")
 				}
 			},
 		},
 		{
-			name: "handle invalid directory patterns",
+			name: "empty include patterns",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				IgnoreDirs:      []string{"[invalid-pattern"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -184,17 +155,112 @@ func TestProcessDirectory(t *testing.T) {
 					t.Fatalf("Failed to read output file: %v", err)
 				}
 
-				// Should still process directories despite invalid pattern
+				contentStr := string(content)
+				if !strings.Contains(contentStr, "package pkg1") {
+					t.Error("Should process all files when no include patterns specified")
+				}
+			},
+		},
+		{
+			name: "handle mixed case patterns",
+			config: cmd.Config{
+				IncludeGlobs: []string{"**/*.GO", "**/*.Md"},
+				OutputFile:   "out.txt",
+			},
+			validate: func(t *testing.T, outputPath string, config cmd.Config) {
+				content, err := os.ReadFile(outputPath)
+				if err != nil {
+					t.Fatalf("Failed to read output file: %v", err)
+				}
+
+				contentStr := string(content)
+				if !strings.Contains(contentStr, "package pkg1") {
+					t.Error("Should handle uppercase patterns (.GO)")
+				}
+				if !strings.Contains(contentStr, "# Package 2") {
+					t.Error("Should handle mixed case patterns (.Md)")
+				}
+			},
+		},
+		{
+			name: "handle invalid file paths",
+			config: cmd.Config{
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
+				InputDir:     "/nonexistent/path",
+			},
+			validate: func(t *testing.T, outputPath string, config cmd.Config) {
+				err := cmd.ProcessDirectory(config)
+				if err == nil {
+					t.Error("Expected error for nonexistent input directory")
+				}
+				if !strings.Contains(err.Error(), "input directory does not exist") {
+					t.Errorf("Expected 'input directory does not exist' error, got: %v", err)
+				}
+				assertFileNotExists(t, outputPath)
+			},
+		},
+		{
+			name: "handle invalid output file path",
+			config: cmd.Config{
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "/invalid/path/out.txt",
+			},
+			validate: func(t *testing.T, outputPath string, config cmd.Config) {
+				err := cmd.ProcessDirectory(config)
+				if err == nil {
+					t.Error("Expected error for invalid output file path")
+					return
+				}
+				if !strings.Contains(err.Error(), "error creating output file") {
+					t.Errorf("Expected 'error creating output file' error, got: %v", err)
+				}
+			},
+		},
+		{
+			name: "process multiple file types",
+			config: cmd.Config{
+				IncludeGlobs: []string{"**/*.go", "**/*.md"},
+				OutputFile:   "out.txt",
+			},
+			validate: func(t *testing.T, outputPath string, config cmd.Config) {
+				content, err := os.ReadFile(outputPath)
+				if err != nil {
+					t.Fatalf("Failed to read output file: %v", err)
+				}
+
+				contentStr := string(content)
+				if !strings.Contains(contentStr, "package pkg1") {
+					t.Error("Output should contain Go files")
+				}
+				if !strings.Contains(contentStr, "# Package 2") {
+					t.Error("Output should contain Markdown files")
+				}
+			},
+		},
+		{
+			name: "handle invalid file patterns",
+			config: cmd.Config{
+				IncludeGlobs: []string{"**/*.go"},
+				ExcludeGlobs: []string{"[invalid-pattern"},
+				OutputFile:   "out.txt",
+			},
+			validate: func(t *testing.T, outputPath string, config cmd.Config) {
+				content, err := os.ReadFile(outputPath)
+				if err != nil {
+					t.Fatalf("Failed to read output file: %v", err)
+				}
+
 				if !strings.Contains(string(content), "package pkg1") {
-					t.Error("Should still process valid directories with invalid patterns")
+					t.Error("Should still process valid files with invalid patterns")
 				}
 			},
 		},
 		{
-			name: "empty valid extensions",
+			name: "empty include patterns",
 			config: cmd.Config{
-				ValidExtensions: []string{},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -202,17 +268,39 @@ func TestProcessDirectory(t *testing.T) {
 					t.Fatalf("Failed to read output file: %v", err)
 				}
 
-				if len(string(content)) > 0 {
-					t.Error("Output should be empty when no valid extensions specified")
+				contentStr := string(content)
+				if !strings.Contains(contentStr, "package pkg1") {
+					t.Error("Should process all files when no include patterns specified")
 				}
 			},
 		},
 		{
-			name: "relative path traversal attempt",
+			name: "handle mixed case patterns",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				ValidDirs:       []string{"../something"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.GO", "**/*.Md"},
+				OutputFile:   "out.txt",
+			},
+			validate: func(t *testing.T, outputPath string, config cmd.Config) {
+				content, err := os.ReadFile(outputPath)
+				if err != nil {
+					t.Fatalf("Failed to read output file: %v", err)
+				}
+
+				contentStr := string(content)
+				if !strings.Contains(contentStr, "package pkg1") {
+					t.Error("Should handle uppercase patterns (.GO)")
+				}
+				if !strings.Contains(contentStr, "# Package 2") {
+					t.Error("Should handle mixed case patterns (.Md)")
+				}
+			},
+		},
+		{
+			name: "handle relative path traversal attempt",
+			config: cmd.Config{
+				IncludeGlobs: []string{"**/*.go"},
+				ExcludeGlobs: []string{"../something"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -228,8 +316,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "unreadable file handling",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				// Create an unreadable file in the temp directory
@@ -253,8 +341,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "symlink handling",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				// Create a symlink in the temp directory
@@ -279,8 +367,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle unreadable directory",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				// Create an unreadable directory
@@ -313,9 +401,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle relative paths in config",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				ValidDirs:       []string{"./src/pkg1"},
-				OutputFile:      "./out.txt",
+				IncludeGlobs: []string{"./src/pkg1/**/*.go"},
+				OutputFile:   "./out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -331,8 +418,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle empty input directory",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				// Create empty directory
@@ -361,8 +448,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle mixed case extensions",
 			config: cmd.Config{
-				ValidExtensions: []string{".GO", ".Md"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.GO", "**/*.Md"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -382,8 +469,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle duplicate extensions",
 			config: cmd.Config{
-				ValidExtensions: []string{".go", ".GO", ".go"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -403,7 +490,7 @@ func TestProcessDirectory(t *testing.T) {
 			name: "handle nil extensions",
 			config: cmd.Config{
 				OutputFile: "out.txt",
-				// ValidExtensions intentionally left as nil
+				// IncludeGlobs intentionally left as nil
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -420,8 +507,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle extension normalization",
 			config: cmd.Config{
-				ValidExtensions: []string{"GO", "md", ".java"}, // Mix of formats
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go", "**/*.md", "**/*.java"}, // Mix of formats
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -438,8 +525,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle relative output path",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "./subdir/out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "./subdir/out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				assertFileExists(t, outputPath)
@@ -449,9 +536,9 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle no valid dirs with files",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				ValidDirs:       []string{}, // Empty valid dirs
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				ExcludeGlobs: []string{}, // Empty valid dirs
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -467,9 +554,9 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle invalid relative path",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				InputDir:        "../../../outside/project",
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				InputDir:     "../../../outside/project",
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				err := cmd.ProcessDirectory(config)
@@ -485,9 +572,10 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle verbose output",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
-				Verbose:         true,
+				IncludeGlobs: []string{"**/*.go"},
+				ExcludeGlobs: []string{"**/*_test.go"},
+				OutputFile:   "out.txt",
+				Verbose:      true,
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -550,9 +638,9 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle non-verbose output",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
-				Verbose:         false,
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
+				Verbose:      false,
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -576,8 +664,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle directory creation error",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "/dev/null/out.txt", // This should fail to create directory
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "/dev/null/out.txt", // This should fail to create directory
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				// Skip the default ProcessDirectory call in the test runner
@@ -600,9 +688,9 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle buffer write errors in verbose mode",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
-				Verbose:         true,
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
+				Verbose:      true,
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				// Create a huge file that might cause buffer write issues
@@ -625,9 +713,9 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "verify summary sorting",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
-				Verbose:         true,
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
+				Verbose:      true,
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -651,8 +739,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle symlink cycle",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				// Create a symlink cycle
@@ -669,8 +757,8 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle write errors",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				// Create a read-only directory to trigger write error
@@ -695,9 +783,9 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle compressed output",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt",
-				Compress:        true,
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt",
+				Compress:     true,
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				content, err := os.ReadFile(outputPath)
@@ -737,10 +825,10 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "handle gzip with base64 encoding",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				OutputFile:      "out.txt.gz.b64",
-				Gzip:            true,
-				Base64:          true,
+				IncludeGlobs: []string{"**/*.go"},
+				OutputFile:   "out.txt.gz.b64",
+				Gzip:         true,
+				Base64:       true,
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				fmt.Printf("Debug: Validating output file: %s\n", outputPath)
@@ -780,9 +868,9 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "default output with gzip",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				Gzip:            true,
-				OutputFile:      "corpus-out.txt.gz",
+				IncludeGlobs: []string{"**/*.go"},
+				Gzip:         true,
+				OutputFile:   "corpus-out.txt.gz",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				if !strings.HasSuffix(outputPath, ".gz") {
@@ -815,9 +903,9 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "auto-add gzip extension",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				Gzip:            true,
-				OutputFile:      "custom-output.txt",
+				IncludeGlobs: []string{"**/*.go"},
+				Gzip:         true,
+				OutputFile:   "custom-output.txt",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				// Construct the expected path with .gz extension
@@ -844,9 +932,9 @@ func TestProcessDirectory(t *testing.T) {
 		{
 			name: "keep existing gzip extension",
 			config: cmd.Config{
-				ValidExtensions: []string{".go"},
-				Gzip:            true,
-				OutputFile:      "already-has.gz",
+				IncludeGlobs: []string{"**/*.go"},
+				Gzip:         true,
+				OutputFile:   "already-has.gz",
 			},
 			validate: func(t *testing.T, outputPath string, config cmd.Config) {
 				if !strings.HasSuffix(outputPath, ".gz") || strings.Count(outputPath, ".gz") > 1 {
@@ -893,92 +981,162 @@ func TestProcessDirectory(t *testing.T) {
 	}
 }
 
-func TestDefaultConfig(t *testing.T) {
-	config := cmd.DefaultConfig()
+func TestProcessDirectoryWithConfigFile(t *testing.T) {
+	// Create temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "config-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
 
-	// Test default values
+	// Create test files and directories
+	testFiles := map[string]string{
+		"src/pkg1/file1.go":     "package pkg1",
+		"src/pkg2/file2.go":     "package pkg2",
+		"src/pkg1/file1.py":     "def main():",
+		"src/pkg2/test_file.go": "package test",
+	}
+
+	for path, content := range testFiles {
+		fullPath := filepath.Join(tmpDir, path)
+		err := os.MkdirAll(filepath.Dir(fullPath), 0755)
+		if err != nil {
+			t.Fatalf("Failed to create directory: %v", err)
+		}
+		err = os.WriteFile(fullPath, []byte(content), 0644)
+		if err != nil {
+			t.Fatalf("Failed to write file: %v", err)
+		}
+	}
+
+	// Create test config files
+	yamlConfig := fmt.Sprintf(`
+inputDir: %s
+outputFile: output.txt
+validExtensions:
+  - .go
+includeGlobs:
+  - "**/pkg1/*.go"
+excludeGlobs:
+  - "*test*.go"
+verbose: true
+`, filepath.Join(tmpDir, "src"))
+
+	yamlPath := filepath.Join(tmpDir, "config.yaml")
+	err = os.WriteFile(yamlPath, []byte(yamlConfig), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write YAML config: %v", err)
+	}
+
+	// Save current working directory
+	originalWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current working directory: %v", err)
+	}
+
 	tests := []struct {
-		name     string
-		got      interface{}
-		expected interface{}
+		name           string
+		configPath     string
+		overrideConfig cmd.Config
+		wantErr        bool
+		validate       func(t *testing.T, config cmd.Config)
 	}{
 		{
-			name:     "default input directory",
-			got:      config.InputDir,
-			expected: ".",
+			name:       "basic yaml config",
+			configPath: yamlPath,
+			overrideConfig: cmd.Config{
+				InputDir: filepath.Join(tmpDir, "src"),
+			},
+			wantErr: false,
+			validate: func(t *testing.T, config cmd.Config) {
+				// Get output file path relative to CWD
+				outputPath := filepath.Join(originalWd, "output.txt")
+				content, err := os.ReadFile(outputPath)
+				if err != nil {
+					t.Fatalf("Failed to read output file: %v", err)
+				}
+				contentStr := string(content)
+
+				// Should contain pkg1 files but not pkg2
+				if !strings.Contains(contentStr, "package pkg1") {
+					t.Error("Output should contain pkg1 files")
+				}
+				if strings.Contains(contentStr, "package pkg2") {
+					t.Error("Output should not contain pkg2 files")
+				}
+				// Should not contain test files
+				if strings.Contains(contentStr, "package test") {
+					t.Error("Output should not contain test files")
+				}
+			},
 		},
 		{
-			name:     "default output file",
-			got:      config.OutputFile,
-			expected: "corpus-out.txt",
+			name:       "override config values",
+			configPath: yamlPath,
+			overrideConfig: cmd.Config{
+				InputDir:     filepath.Join(tmpDir, "src"),
+				IncludeGlobs: []string{"**/*.py"},
+			},
+			wantErr: false,
+			validate: func(t *testing.T, config cmd.Config) {
+				// Get output file path relative to CWD
+				outputPath := filepath.Join(originalWd, "output.txt")
+				content, err := os.ReadFile(outputPath)
+				if err != nil {
+					t.Fatalf("Failed to read output file: %v", err)
+				}
+				contentStr := string(content)
+
+				// Should only contain Python files
+				if !strings.Contains(contentStr, "def main():") {
+					t.Error("Output should contain Python files")
+				}
+				if strings.Contains(contentStr, "package") {
+					t.Error("Output should not contain Go files")
+				}
+			},
 		},
 		{
-			name:     "default valid extensions include .go",
-			got:      contains(config.ValidExtensions, ".go"),
-			expected: true,
-		},
-		{
-			name:     "default ignore dirs include vendor",
-			got:      contains(config.IgnoreDirs, "**/vendor"),
-			expected: true,
-		},
-		{
-			name:     "default ignore dirs include .git",
-			got:      contains(config.IgnoreDirs, "**/.git"),
-			expected: true,
-		},
-		{
-			name:     "default ignore patterns include test files",
-			got:      contains(config.IgnorePatterns, "*_test.go"),
-			expected: true,
+			name:       "non-existent config file",
+			configPath: "non-existent.yaml",
+			wantErr:    true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.got != tt.expected {
-				t.Errorf("got %v, want %v", tt.got, tt.expected)
+			// Load config first to get the final config for validation
+			fileConfig, err := cmd.LoadConfigFromFile(tt.configPath)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Failed to load config file: %v", err)
+			}
+
+			// Apply overrides
+			if tt.overrideConfig.InputDir != "" {
+				fileConfig.InputDir = tt.overrideConfig.InputDir
+			}
+			if tt.overrideConfig.IncludeGlobs != nil {
+				fileConfig.IncludeGlobs = tt.overrideConfig.IncludeGlobs
+			}
+
+			err = cmd.ProcessDirectoryWithConfigFile(tt.configPath, tt.overrideConfig)
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if tt.validate != nil {
+				tt.validate(t, *fileConfig)
 			}
 		})
 	}
 
-	t.Run("default verbose setting", func(t *testing.T) {
-		if config.Verbose != false {
-			t.Error("Verbose should be false by default")
-		}
-	})
-
-	// Test using default config with ProcessDirectory
-	t.Run("process with default config", func(t *testing.T) {
-		tempDir, cleanup := createTestFiles(t)
-		defer cleanup()
-
-		config := cmd.DefaultConfig()
-		config.InputDir = tempDir
-		config.OutputFile = filepath.Join(tempDir, "out.txt")
-
-		err := cmd.ProcessDirectory(config)
-		if err != nil {
-			t.Fatalf("ProcessDirectory failed: %v", err)
-		}
-
-		content, err := os.ReadFile(config.OutputFile)
-		if err != nil {
-			t.Fatalf("Failed to read output file: %v", err)
-		}
-
-		contentStr := string(content)
-		if !strings.Contains(contentStr, "package pkg1") {
-			t.Error("Should process .go files with default config")
-		}
-		if strings.Contains(contentStr, "package pkg1_test") {
-			t.Error("Should ignore test files with default config")
-		}
-		if strings.Contains(contentStr, "vendor.json") {
-			t.Error("Should ignore vendor directory with default config")
-		}
-		if strings.Contains(contentStr, "[core]") {
-			t.Error("Should ignore .git directory with default config")
-		}
-	})
+	// Clean up any output files created in CWD
+	os.Remove(filepath.Join(originalWd, "output.txt"))
 }

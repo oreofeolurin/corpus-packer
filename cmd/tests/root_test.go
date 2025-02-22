@@ -58,6 +58,14 @@ func TestExecute(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
 			}
+
+			// Cleanup any test output files "corpus-out.txt"
+			files, err := filepath.Glob("corpus-out.txt")
+			if err == nil {
+				for _, f := range files {
+					os.Remove(f)
+				}
+			}
 		})
 	}
 }

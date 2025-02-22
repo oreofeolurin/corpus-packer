@@ -1,72 +1,233 @@
-# cpack (Corpus Packer)
+# Corpus Packer (cpack)
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/oreofeolurin/corpus-packer)](https://go.dev/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+Corpus Packer (cpack) is a powerful command-line tool built in Go for combining multiple files from directories into a single output file while preserving file structures, file extensions, and ignore patterns. It is perfect for tasks such as compiling training datasets, creating documentation bundles, or merging log files for analysis.
 
-A command-line tool that combines multiple files from a directory into a single output file while respecting file extensions and ignore patterns. Perfect for creating training datasets, documentation compilations, or any task requiring file content aggregation.
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Command Line Options](#command-line-options)
+- [Configuration File](#configuration-file)
+- [Output Formats](#output-formats)
+- [Examples](#examples)
+- [Configuration](#configuration)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
 
-- 📁 Combine multiple files into a single output file
-- 🔍 Filter files by extension
-- 🚫 Ignore specific files and directories using patterns
-- 📑 Clear file separation with start/end markers
-- 🌳 Support for recursive directory traversal
-- ⚡ Flexible command-line interface
-- 🔒 Preserves file content integrity
-- 🎯 Smart extension handling (with or without dots)
+- **File Aggregation**: Combine multiple files into a single output file while preserving content integrity.
+- **Extension Based Filtering**: Process only files with specified extensions.
+- **Ignore Patterns**: Exclude files and directories matching specific patterns.
+- **Directory Traversal**: Recursively search through directories.
+- **Smart Extension Handling**: Use file extensions with or without a leading dot effortlessly.
+- **Custom Output**: Specify the destination file for the aggregated content.
+- **Multiple Output Formats**: Support for compressed, gzipped, and base64 encoded output.
+- **Flexible CLI**: Intuitive command-line interface with numerous options to tailor behavior to your needs.
+- **Configuration Files**: Support for YAML and JSON configuration files.
 
 ## Installation
 
-### Prerequisites
-
-- Go 1.16 or higher
-- Git (for building from source)
+Corpus Packer requires Go (version 1.16 or higher) to build from source.
 
 ### Using go install
 
-```bash
+Install directly using the following command:
+
+```
 go install github.com/oreofeolurin/corpus-packer/cpack@latest
 ```
 
-### Building from source
+### Building from Source
 
-```bash
+Clone the repository and build it with:
+
+```
 git clone https://github.com/oreofeolurin/corpus-packer.git
 cd corpus-packer
 go build -o cpack
 ```
 
+## Usage
+
+Run Corpus Packer with minimal options to combine files from the current directory:
+
+```
+cpack
+```
+
+Alternatively, you can specify an input directory, output file, or filtering options as needed.
+
 ## Command Line Options
 
-| Flag | Short | Description | Default |
-|------|-------|-------------|---------|
-| `--input` | `-i` | Input directory to process | Current directory |
-| `--output` | `-o` | Output file path | `corpus-packer-out.txt` |
-| `--valid` | `-v` | Valid file extensions | `.txt,.csv,.json,.js,.html,.go,.py` |
-| `--dirs` | `-d` | Directories to include | All directories |
-| `--ignore` | `-x` | Patterns to ignore (files) | `*.min.js,*.lock` |
-| `--ignore-dirs` | `-D` | Directory patterns to ignore | `**/.*` |
+| Flag               | Short | Description                                           | Default           |
+|-------------------|-------|-------------------------------------------------------|-------------------|
+| `--dir`           | `-d`  | Input directory to process                            | Current directory |
+| `--output`        | `-o`  | Output file path                                      | corpus-out.txt    |
+| `--include`       | `-i`  | Glob patterns to include                              | All supported types |
+| `--exclude`       | `-x`  | Glob patterns to exclude                              | Common test/vendor |
+| `--compress`      | `-c`  | Compress output by removing whitespace                | false             |
+| `--max-compress`  | `-m`  | Maximum compression (remove comments)                  | false             |
+| `--gzip`          | `-z`  | Compress output file using gzip                       | false             |
+| `--base64`        | `-b`  | Base64 encode the output (use with --gzip)           | false             |
+| `--verbose`       | `-v`  | Include summary at start of output                    | false             |
 
-### Examples
+## Configuration File
 
-1. Process only specific directories:
-```bash
-cpack -d "src,lib,internal"
+You can use a configuration file in either YAML or JSON format to specify your settings. This is particularly useful for complex configurations or when you want to reuse the same settings across multiple runs.
+
+### YAML Configuration Example
+
+```yaml
+inputDir: ./src
+outputFile: output.txt
+includeGlobs:
+  - "**/*.go"
+  - "**/*.py"
+  - "src/**/*.js"
+excludeGlobs:
+  - "**/*_test.go"
+  - "**/vendor/**"
+  - "**/.git/**"
+  - "**/node_modules/**"
+verbose: true
+compress: false
+maxCompress: false
+gzip: false
+base64: false
 ```
 
-2. Process specific directories with specific file types:
-```bash
-cpack -d "src,pkg" -v "go,md"
+### JSON Configuration Example
+
+```json
+{
+  "inputDir": "./src",
+  "outputFile": "output.txt",
+  "includeGlobs": ["**/*.go", "**/*.py", "src/**/*.js"],
+  "excludeGlobs": ["**/*_test.go", "**/vendor/**", "**/.git/**", "**/node_modules/**"],
+  "verbose": true,
+  "compress": false,
+  "maxCompress": false,
+  "gzip": false,
+  "base64": false
+}
 ```
 
-3. Complete example with directory filtering:
+To use a configuration file:
+
+```bash
+cpack -c config.yaml -o custom-output.txt
+```
+
+Command line arguments take precedence over configuration file settings, allowing you to override specific values when needed.
+
+## Output Formats
+
+Corpus Packer supports multiple output formats to suit different needs:
+
+1. **Standard Output (Default)**
+   - Plain text output with original formatting preserved
+   - File separators and content structure maintained
+
+2. **Compressed Output** (`--compress`)
+   - Removes unnecessary whitespace
+   - Preserves essential formatting
+   - Reduces file size while maintaining readability
+
+3. **Maximum Compressed Output** (`--max-compress`)
+   - Removes all comments and unnecessary whitespace
+   - Minimal file size with reduced readability
+   - Best for machine processing or size constraints
+
+4. **Gzipped Output** (`--gzip`)
+   - Compresses output using gzip
+   - Automatically adds .gz extension if not present
+   - Significant size reduction for text-based files
+
+5. **Base64 Encoded Gzipped Output** (`--gzip --base64`)
+   - Gzips the output and then base64 encodes it
+   - Useful for systems that require base64 encoding
+   - Must be used with gzip option
+
+## Examples
+
+1. Process only Go files in specific directories:
+
+```bash
+cpack -i "**/*.go" -i "src/**/*.go" -i "internal/**/*.go"
+```
+
+2. Process multiple file types with compression:
+
+```bash
+cpack -i "src/**/*.{go,py,js}" -c -o compressed.txt
+```
+
+3. Maximum compression with gzip:
+
+```bash
+cpack -m -z -o output.txt.gz
+```
+
+4. Gzip with base64 encoding:
+
+```bash
+cpack -z -b -o output.txt.gz.b64
+```
+
+5. Verbose output with compression:
+
+```bash
+cpack -v -c -o output.txt
+```
+
+6. Complete example with directory filtering and excluding patterns:
+
 ```bash
 cpack \
-  -i ./project \
+  -d ./project \
   -o combined.txt \
-  -d "src,internal,pkg" \
-  -v "go,md" \
-  -x "*.test.go" \
-  -D "**/testdata,**/vendor"
+  -i "src/**/*.go" \
+  -i "internal/**/*.go" \
+  -i "pkg/**/*.go" \
+  -x "**/*_test.go" \
+  -x "**/testdata/**" \
+  -x "**/vendor/**" \
+  -x "**/.git/**" \
+  -c -v
 ```
+
+7. Using a configuration file with overrides:
+
+```bash
+cpack -c config.yaml -o custom-output.txt -z
+```
+
+## Configuration
+
+Corpus Packer provides flexibility through its command line flags and configuration files. Customize it to match your project structure and ignore patterns:
+
+- **File Extensions**: Specify valid extensions with or without a leading dot.
+- **Ignore Patterns**: Use glob patterns to exclude files or directories that should not be processed.
+- **Configuration Files**: Use YAML or JSON files for complex configurations.
+- **Output Formats**: Choose from multiple output formats based on your needs.
+
+## Troubleshooting
+
+- Ensure you are using Go version 1.16 or higher.
+- Verify directory permissions if files are not being processed as expected.
+- Double-check your use of the `--exclude` option in case required files are inadvertently excluded.
+- When using configuration files, ensure they are properly formatted YAML or JSON.
+- For gzipped output, ensure the target directory is writable.
+- Base64 encoding requires the gzip option to be enabled.
+- Refer back to the examples and command line options for guidance if issues arise.
+
+## Contributing
+
+Contributions are welcome! Please consult our [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to help improve Corpus Packer. Open issues or submit pull requests for bug fixes, feature enhancements, or other improvements.
+
+## License
+
+Corpus Packer is licensed under the [MIT License](LICENSE).

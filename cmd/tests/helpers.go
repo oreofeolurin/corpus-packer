@@ -8,6 +8,26 @@ import (
 )
 
 // createTestFiles creates a temporary directory structure for testing
+// Directory Structure:
+// tempDir/
+//
+//	├── src/
+//	│   ├── pkg1/
+//	│   │   ├── file1.go         (regular Go file)
+//	│   │   ├── file1_test.go    (test file)
+//	│   │   ├── main.py          (Python file)
+//	│   │   └── subdir/          (nested directory)
+//	│   └── pkg2/
+//	│       ├── file2.go         (another Go file)
+//	│       ├── README.md        (markdown file)
+//	│       └── utils.py         (another Python file)
+//	├── config/                  (configuration directory)
+//	├── output/                  (output directory)
+//	├── internal/                (internal directory)
+//	├── vendor/
+//	│   └── vendor.json         (vendor file)
+//	└── .git/
+//	    └── config              (git config file)
 func createTestFiles(t *testing.T) (string, func()) {
 	t.Helper()
 
@@ -31,6 +51,8 @@ func createTestFiles(t *testing.T) (string, func()) {
 		"internal",
 		".git",
 		"vendor",
+		"config",
+		"output",
 	}
 
 	for _, dir := range dirs {
@@ -40,13 +62,23 @@ func createTestFiles(t *testing.T) (string, func()) {
 		}
 	}
 
+	// Test files with their contents
 	files := map[string]string{
+		// Go files
 		"src/pkg1/file1.go":      "package pkg1\n\nfunc Test() {}\n",
 		"src/pkg1/file1_test.go": "package pkg1_test\n",
 		"src/pkg2/file2.go":      "package pkg2\n",
-		"src/pkg2/README.md":     "# Package 2\n",
-		".git/config":            "[core]\n",
-		"vendor/vendor.json":     "{}",
+
+		// Python files
+		"src/pkg1/main.py":  "def main():\n    print('Hello, World!')\n",
+		"src/pkg2/utils.py": "def helper():\n    return 42\n",
+
+		// Documentation
+		"src/pkg2/README.md": "# Package 2\n",
+
+		// Config files
+		".git/config":        "[core]\n",
+		"vendor/vendor.json": "{}",
 	}
 
 	for path, content := range files {
@@ -126,6 +158,19 @@ func contains(slice []string, value string) bool {
 func isSorted(strs []string) bool {
 	for i := 1; i < len(strs); i++ {
 		if strs[i] < strs[i-1] {
+			return false
+		}
+	}
+	return true
+}
+
+// sliceEqual compares two string slices for equality
+func sliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
 			return false
 		}
 	}

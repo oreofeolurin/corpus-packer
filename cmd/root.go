@@ -33,30 +33,26 @@ func init() {
 	defaults := DefaultConfig()
 
 	// Input/Output flags
+	rootCmd.Flags().StringVarP(&config.InputDir, "dir", "d", defaults.InputDir,
+		"Input directory to process")
 	rootCmd.Flags().StringVarP(&config.OutputFile, "output", "o", defaults.OutputFile,
 		"Output file path (default: corpus-out.txt or corpus-out.txt.gz with --gzip)")
 	rootCmd.Flags().BoolVarP(&config.Verbose, "verbose", "v", defaults.Verbose,
 		"Include summary at the start of output file")
 	rootCmd.Flags().BoolVarP(&config.Compress, "compress", "c", defaults.Compress,
 		"Compress output by removing extra whitespace")
-	rootCmd.Flags().BoolVarP(&config.AggressiveCompress, "max-compress", "m", defaults.AggressiveCompress,
+	rootCmd.Flags().BoolVarP(&config.MaxCompress, "max-compress", "m", defaults.MaxCompress,
 		"Maximum compression: remove comments and all unnecessary whitespace")
 	rootCmd.Flags().BoolVarP(&config.Gzip, "gzip", "z", defaults.Gzip,
 		"Compress output file using gzip")
 	rootCmd.Flags().BoolVarP(&config.Base64, "base64", "b", defaults.Base64,
 		"Base64 encode the output (use with --gzip)")
 
-	// File type flags
-	rootCmd.Flags().StringSliceVarP(&config.ValidExtensions, "extensions", "e", defaults.ValidExtensions,
-		"File extensions to process (e.g., .go,.js,.py)")
-	rootCmd.Flags().StringSliceVarP(&config.ValidDirs, "include-glob", "g", defaults.ValidDirs,
-		"Glob patterns for directories to include (e.g., 'src/**/pkg', 'internal/*')")
-
-	// Ignore pattern flags
-	rootCmd.Flags().StringSliceVarP(&config.IgnoreDirs, "exclude-glob", "x", defaults.IgnoreDirs,
-		"Glob patterns for directories to exclude (e.g., '**/vendor', '**/.git', '**/node_modules')")
-	rootCmd.Flags().StringSliceVarP(&config.IgnorePatterns, "ignore-patterns", "p", defaults.IgnorePatterns,
-		"File patterns to ignore (e.g., '*_test.go', '*.min.js')")
+	// File pattern flags
+	rootCmd.Flags().StringSliceVarP(&config.IncludeGlobs, "include", "i", defaults.IncludeGlobs,
+		"Glob patterns to include (e.g., '**/*.go', 'src/**/*.py')")
+	rootCmd.Flags().StringSliceVarP(&config.ExcludeGlobs, "exclude", "x", defaults.ExcludeGlobs,
+		"Glob patterns to exclude (e.g., '**/vendor/**', '**/*_test.go')")
 
 	// Ensure paths are cleaned
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {

@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,21 +13,6 @@ import (
 	"strings"
 	"time"
 )
-
-// Config holds the program's configuration
-type Config struct {
-	InputDir           string
-	OutputFile         string
-	ValidExtensions    []string
-	ValidDirs          []string
-	IgnorePatterns     []string
-	IgnoreDirs         []string
-	Verbose            bool
-	Compress           bool
-	AggressiveCompress bool
-	Gzip               bool
-	Base64             bool
-}
 
 // Summary holds processing statistics
 type Summary struct {
@@ -40,108 +24,23 @@ type Summary struct {
 	EndTime        time.Time
 }
 
-// DefaultConfig returns a Config with sensible defaults
-func DefaultConfig() Config {
-	return Config{
-		InputDir:   ".", // Current directory
-		OutputFile: "corpus-out.txt",
-		Verbose:    false,
-		Compress:   false,
-		Gzip:       false,
-		Base64:     false,
-		ValidExtensions: []string{
-			".go",    // Go source files
-			".js",    // JavaScript
-			".ts",    // TypeScript
-			".css",   // CSS
-			".py",    // Python
-			".java",  // Java
-			".cpp",   // C++
-			".c",     // C
-			".h",     // Header files
-			".hpp",   // C++ headers
-			".rb",    // Ruby
-			".php",   // PHP
-			".cs",    // C#
-			".swift", // Swift
-			".kt",    // Kotlin
-			".md",    // Markdown
-			".tsx",   // TypeScript React
-			".jsx",   // JavaScript React
-			".ts",    // TypeScript
-			".tsx",   // TypeScript React
-			".jsx",   // JavaScript React
-			".json",  // JSON
-			".yaml",  // YAML
-			".yml",   // YAML
-			".toml",  // TOML
-			//".csv",   // CSV
-			".txt", // TXT
-			//	".tsv",   // TSV
-			".xml",  // XML
-			".docx", // Docx
-			".pptx", // Pptx
-			".xlsx", // Xlsx
-			".xls",  // Xls
-			".doc",  // Doc
-			".ppt",  // Ppt
-			".pdf",  // Pdf
-		},
-		IgnoreDirs: []string{
-			"**/vendor",       // Vendor directories
-			"**/.git",         // Git directories
-			"**/.github",      // Github directories
-			"**/node_modules", // Node.js modules
-			"**/__pycache__",  // Python cache
-			"**/bin",          // Binary directories
-			"**/obj",          // Object files
-			"**/build",        // Build directories
-			"**/dist",         // Distribution directories
-			//"**/dist",         // Distribution directories
-			"**/.vitepress", // Vitepress directories
-			"**/.idea",      // IDE directories
-			"**/.vscode",    // VS Code directories
-		},
-		IgnorePatterns: []string{
-			"*_test.go",     // Go test files
-			"*.test.*",      // Test files
-			"*.spec.*",      // Test specs
-			"*.min.*",       // Minified files
-			"*.map",         // Source maps
-			"*.generated.*", // Generated files
-		},
-	}
+type fileProcessor struct {
+	config         *Config
+	outputFile     io.Writer
+	contentBuffer  *bytes.Buffer
+	processedFiles map[string]bool
+	summary        *Summary
 }
 
 // ProcessDirectory processes files in the given directory according to the config
 func ProcessDirectory(config Config) error {
+	// Try to load default config file if it exists
+	if autoConfig, err := tryLoadDefaultConfig(config.InputDir); err == nil {
+		config = MergeConfig(config, autoConfig)
+	}
+
 	// Apply defaults for empty fields
-	if config.InputDir == "" {
-		config.InputDir = "."
-	}
-
-	// Handle output file name and gzip extension
-	if config.OutputFile == "" || config.OutputFile == "corpus-out.txt" {
-		if config.Gzip {
-			config.OutputFile = "corpus-out.txt.gz"
-		} else {
-			config.OutputFile = "corpus-out.txt"
-		}
-	} else if config.Gzip && !strings.HasSuffix(config.OutputFile, ".gz") &&
-		!strings.Contains(config.OutputFile, ".gz.") {
-		config.OutputFile += ".gz"
-	}
-
-	// Only apply default extensions if the field is nil, not if it's empty
-	if config.ValidExtensions == nil {
-		config.ValidExtensions = DefaultConfig().ValidExtensions
-	}
-	if len(config.IgnoreDirs) == 0 {
-		config.IgnoreDirs = DefaultConfig().IgnoreDirs
-	}
-	if len(config.IgnorePatterns) == 0 {
-		config.IgnorePatterns = DefaultConfig().IgnorePatterns
-	}
+	config = ApplyDefaults(config)
 
 	// Validate input directory first
 	if err := validateConfig(&config); err != nil {
@@ -236,12 +135,78 @@ func ProcessDirectory(config Config) error {
 	return nil
 }
 
-type fileProcessor struct {
-	config         *Config
-	outputFile     io.Writer
-	contentBuffer  *bytes.Buffer
-	processedFiles map[string]bool
-	summary        *Summary
+// ProcessDirectoryWithConfigFile processes files using configuration from a file
+func ProcessDirectoryWithConfigFile(configPath string, overrideConfig Config) error {
+	// Load config from file
+	fileConfig, err := LoadConfigFromFile(configPath)
+	if err != nil {
+		return fmt.Errorf("error loading config file: %w", err)
+	}
+
+	// Get current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("error getting current working directory: %w", err)
+	}
+
+	// Create a new config that will hold the merged values
+	mergedConfig := *fileConfig
+
+	// Handle input directory
+	if overrideConfig.InputDir != "" {
+		mergedConfig.InputDir = overrideConfig.InputDir
+	} else if !filepath.IsAbs(mergedConfig.InputDir) {
+		// Make input directory relative to current working directory
+		mergedConfig.InputDir = filepath.Join(cwd, mergedConfig.InputDir)
+	}
+
+	// Handle output file path
+	if overrideConfig.OutputFile != "" {
+		mergedConfig.OutputFile = overrideConfig.OutputFile
+	} else if !filepath.IsAbs(mergedConfig.OutputFile) {
+		// Make output file relative to current working directory
+		mergedConfig.OutputFile = filepath.Join(cwd, mergedConfig.OutputFile)
+	}
+
+	// Create output directory if needed
+	outputDir := filepath.Dir(mergedConfig.OutputFile)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		// If it's a read-only filesystem error, wrap it as an output file error
+		if strings.Contains(err.Error(), "read-only file system") {
+			return fmt.Errorf("error creating output file: %w", err)
+		}
+		return fmt.Errorf("error creating output directory: %w", err)
+	}
+
+	// Handle include patterns - override takes precedence over file config
+	if len(overrideConfig.IncludeGlobs) > 0 {
+		mergedConfig.IncludeGlobs = overrideConfig.IncludeGlobs
+	}
+
+	// Handle exclude patterns - override takes precedence over file config
+	if len(overrideConfig.ExcludeGlobs) > 0 {
+		mergedConfig.ExcludeGlobs = overrideConfig.ExcludeGlobs
+	}
+
+	// Handle boolean flags - override takes precedence over file config
+	if overrideConfig.Verbose {
+		mergedConfig.Verbose = true
+	}
+	if overrideConfig.Compress {
+		mergedConfig.Compress = true
+	}
+	if overrideConfig.MaxCompress {
+		mergedConfig.MaxCompress = true
+	}
+	if overrideConfig.Gzip {
+		mergedConfig.Gzip = true
+	}
+	if overrideConfig.Base64 {
+		mergedConfig.Base64 = true
+	}
+
+	// Process with merged config
+	return ProcessDirectory(mergedConfig)
 }
 
 func (p *fileProcessor) processPath(path string, info os.FileInfo, err error) error {
@@ -250,7 +215,22 @@ func (p *fileProcessor) processPath(path string, info os.FileInfo, err error) er
 		return nil
 	}
 
-	relPath, err := filepath.Rel(p.config.InputDir, path)
+	// Get absolute path for the file
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting absolute path for %s: %v\n", path, err)
+		return nil
+	}
+
+	// Get absolute path for input directory
+	absInputDir, err := filepath.Abs(p.config.InputDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting absolute path for input directory: %v\n", err)
+		return nil
+	}
+
+	// Calculate relative path from input directory
+	relPath, err := filepath.Rel(absInputDir, absPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting relative path for %s: %v\n", path, err)
 		return nil
@@ -264,7 +244,7 @@ func (p *fileProcessor) processPath(path string, info os.FileInfo, err error) er
 		return p.processDirectory(relPath)
 	}
 
-	return p.processFile(relPath, path)
+	return p.processFile(relPath, absPath)
 }
 
 func (p *fileProcessor) processDirectory(relPath string) error {
@@ -279,16 +259,55 @@ func (p *fileProcessor) processDirectory(relPath string) error {
 	return nil
 }
 
+// matchGlobPattern checks if a path matches a glob pattern, properly handling ** patterns
+func matchGlobPattern(pattern, path string) (bool, error) {
+	// Convert pattern to regex
+	pattern = filepath.Clean(pattern)
+	path = filepath.Clean(path)
+
+	// Make file extensions case insensitive by converting both to lowercase
+	// Only do this for the extension part to preserve case sensitivity for directories
+	patternExt := filepath.Ext(pattern)
+	pathExt := filepath.Ext(path)
+	if patternExt != "" && pathExt != "" {
+		pattern = pattern[:len(pattern)-len(patternExt)] + strings.ToLower(patternExt)
+		path = path[:len(path)-len(pathExt)] + strings.ToLower(pathExt)
+	}
+
+	// Escape special characters except * and ?
+	regexPattern := regexp.QuoteMeta(pattern)
+
+	// Handle special case where pattern starts with **/ or contains /**/ or ends with /**
+	regexPattern = strings.ReplaceAll(regexPattern, "\\*\\*/", "(?:.*/)?")
+	regexPattern = strings.ReplaceAll(regexPattern, "/\\*\\*/", "/(?:.*/)?")
+	regexPattern = strings.ReplaceAll(regexPattern, "\\*\\*", ".*")
+
+	// Replace * with non-separator match
+	regexPattern = strings.ReplaceAll(regexPattern, "\\*", "[^/]*")
+
+	// Replace ? with single non-separator match
+	regexPattern = strings.ReplaceAll(regexPattern, "\\?", "[^/]")
+
+	// Ensure pattern matches the entire path
+	regexPattern = "^" + regexPattern + "$"
+
+	// Compile and match
+	regex, err := regexp.Compile(regexPattern)
+	if err != nil {
+		return false, fmt.Errorf("invalid pattern %s: %v", pattern, err)
+	}
+
+	return regex.MatchString(path), nil
+}
+
 func (p *fileProcessor) shouldIgnoreDir(relPath string) bool {
-	for _, pattern := range p.config.IgnoreDirs {
-		pattern = strings.TrimPrefix(pattern, "**/")
-		matched, err := filepath.Match(pattern, filepath.Base(relPath))
+	for _, pattern := range p.config.ExcludeGlobs {
+		matched, err := matchGlobPattern(pattern, relPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error matching directory pattern %s: %v\n", pattern, err)
 			continue
 		}
 		if matched {
-			fmt.Printf("Skipping directory (pattern match): %s (pattern: %s)\n", relPath, pattern)
 			return true
 		}
 	}
@@ -296,52 +315,45 @@ func (p *fileProcessor) shouldIgnoreDir(relPath string) bool {
 }
 
 func (p *fileProcessor) isValidDir(relPath string) bool {
-	if len(p.config.ValidDirs) == 0 {
+	if len(p.config.IncludeGlobs) == 0 {
 		return true
 	}
 
+	// Always allow the root directory (empty or "." path)
+	if relPath == "" || relPath == "." {
+		return true
+	}
+
+	// Clean the path
 	relPathClean := filepath.Clean(relPath)
-	if relPathClean == "." {
-		return p.isValidRootDir()
-	}
 
-	return p.isValidSubDir(relPathClean)
-}
+	// Check if this directory or any of its children could match any include pattern
+	for _, pattern := range p.config.IncludeGlobs {
+		// For patterns with **, check if this directory could be part of a valid path
+		if strings.Contains(pattern, "**") {
+			// Get the part before the first **
+			parts := strings.Split(pattern, "**")
+			prefix := parts[0]
 
-func (p *fileProcessor) isValidRootDir() bool {
-	for _, validDir := range p.config.ValidDirs {
-		if strings.Contains(validDir, "/") {
-			fmt.Printf("Root directory is parent of: %s\n", validDir)
+			// If no prefix (pattern starts with **), allow the directory
+			if prefix == "" {
+				return true
+			}
+
+			// If there's a prefix, check if this directory matches or could contain matching files
+			if strings.HasPrefix(relPathClean, prefix) || strings.HasPrefix(prefix, relPathClean) {
+				return true
+			}
+			continue
+		}
+
+		// For non-** patterns, check if this directory is part of the pattern path
+		patternDir := filepath.Dir(pattern)
+		if patternDir == "." || strings.HasPrefix(relPathClean, patternDir) || strings.HasPrefix(patternDir, relPathClean) {
 			return true
 		}
 	}
-	return false
-}
 
-func (p *fileProcessor) isValidSubDir(relPathClean string) bool {
-	for _, validDir := range p.config.ValidDirs {
-		validDirClean := filepath.Clean(validDir)
-		fmt.Printf("Checking dir: %s against valid dir: %s\n", relPathClean, validDirClean)
-
-		// Check parent directory relationship
-		if strings.HasPrefix(validDirClean, relPathClean+"/") {
-			fmt.Printf("Found parent directory match: %s is parent of %s\n", relPathClean, validDirClean)
-			return true
-		}
-
-		// Check child directory relationship
-		if strings.HasPrefix(relPathClean, validDirClean+"/") {
-			fmt.Printf("Found child directory match: %s is child of %s\n", relPathClean, validDirClean)
-			return true
-		}
-
-		// Check exact match
-		if relPathClean == validDirClean {
-			fmt.Printf("Found exact directory match: %s\n", relPathClean)
-			return true
-		}
-	}
-	fmt.Printf("Skipping invalid directory: %s\n", relPathClean)
 	return false
 }
 
@@ -357,7 +369,7 @@ func (p *fileProcessor) processFile(relPath, path string) error {
 		return nil
 	}
 
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", path, err)
 		p.summary.SkippedFiles = append(p.summary.SkippedFiles, relPath+" (read error)")
@@ -406,21 +418,23 @@ func (p *fileProcessor) processFile(relPath, path string) error {
 }
 
 func (p *fileProcessor) isValidFile(relPath, path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	isValid := false
-	for _, validExt := range p.config.ValidExtensions {
-		if ext == validExt {
-			isValid = true
-			break
+	// First check if it matches any ignore patterns
+	for _, pattern := range p.config.ExcludeGlobs {
+		// For patterns without /, match against base name
+		if !strings.Contains(pattern, "/") {
+			matched, err := matchGlobPattern(pattern, filepath.Base(relPath))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error matching file pattern %s: %v\n", pattern, err)
+				continue
+			}
+			if matched {
+				return false
+			}
+			continue
 		}
-	}
 
-	if !isValid {
-		return false
-	}
-
-	for _, pattern := range p.config.IgnorePatterns {
-		matched, err := filepath.Match(pattern, filepath.Base(path))
+		// For patterns with /, match against full path
+		matched, err := matchGlobPattern(pattern, relPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error matching file pattern %s: %v\n", pattern, err)
 			continue
@@ -430,7 +444,37 @@ func (p *fileProcessor) isValidFile(relPath, path string) bool {
 		}
 	}
 
-	return true
+	// Then check if it matches any include patterns
+	if len(p.config.IncludeGlobs) == 0 {
+		return true // If no include patterns specified, accept all files
+	}
+
+	for _, pattern := range p.config.IncludeGlobs {
+		// For patterns without /, match against base name
+		if !strings.Contains(pattern, "/") {
+			matched, err := matchGlobPattern(pattern, filepath.Base(relPath))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error matching include pattern %s: %v\n", pattern, err)
+				continue
+			}
+			if matched {
+				return true
+			}
+			continue
+		}
+
+		// For patterns with /, match against full path
+		matched, err := matchGlobPattern(pattern, relPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error matching include pattern %s: %v\n", pattern, err)
+			continue
+		}
+		if matched {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (p *fileProcessor) writeSummary() error {
@@ -475,35 +519,36 @@ Skipped Files:
 
 func validateConfig(config *Config) error {
 	// Clean and validate input directory
-	config.InputDir = filepath.Clean(config.InputDir)
+	if !filepath.IsAbs(config.InputDir) {
+		// Get absolute path relative to current working directory
+		absPath, err := filepath.Abs(config.InputDir)
+		if err != nil {
+			return fmt.Errorf("error resolving input directory path: %w", err)
+		}
+		config.InputDir = absPath
+	}
+
 	if _, err := os.Stat(config.InputDir); os.IsNotExist(err) {
 		return fmt.Errorf("input directory does not exist: %s", config.InputDir)
 	}
 
 	// Clean output file path
-	config.OutputFile = filepath.Clean(config.OutputFile)
-
-	// Clean valid directories
-	for i, dir := range config.ValidDirs {
-		config.ValidDirs[i] = filepath.Clean(dir)
-	}
-
-	// Normalize extensions (convert to lowercase and remove duplicates)
-	validExts := make(map[string]bool)
-	for _, ext := range config.ValidExtensions {
-		ext = strings.ToLower(ext)
-		if !strings.HasPrefix(ext, ".") {
-			ext = "." + ext
+	if !filepath.IsAbs(config.OutputFile) {
+		// Get absolute path relative to current working directory
+		absPath, err := filepath.Abs(config.OutputFile)
+		if err != nil {
+			return fmt.Errorf("error resolving output file path: %w", err)
 		}
-		validExts[ext] = true
+		config.OutputFile = absPath
 	}
 
-	// Convert back to slice in a deterministic order
-	normalizedExts := make([]string, 0, len(validExts))
-	for ext := range validExts {
-		normalizedExts = append(normalizedExts, ext)
+	// Clean glob patterns
+	for i, pattern := range config.IncludeGlobs {
+		config.IncludeGlobs[i] = filepath.Clean(pattern)
 	}
-	config.ValidExtensions = normalizedExts
+	for i, pattern := range config.ExcludeGlobs {
+		config.ExcludeGlobs[i] = filepath.Clean(pattern)
+	}
 
 	return nil
 }
@@ -512,7 +557,7 @@ func compressContent(content []byte, config *Config) []byte {
 	str := string(content)
 
 	// Remove comments if aggressive compression is enabled
-	if config.AggressiveCompress {
+	if config.MaxCompress {
 		str = removeComments(str)
 	}
 
@@ -552,4 +597,27 @@ func removeComments(str string) string {
 	str = multiLine.ReplaceAllString(str, "")
 
 	return str
+}
+
+// tryLoadDefaultConfig attempts to load a config file from the default locations
+func tryLoadDefaultConfig(dir string) (*Config, error) {
+	// Check for cpack.yml first
+	ymlPath := filepath.Join(dir, "cpack.yml")
+	if _, err := os.Stat(ymlPath); err == nil {
+		return LoadConfigFromFile(ymlPath)
+	}
+
+	// Then check for cpack.yaml
+	yamlPath := filepath.Join(dir, "cpack.yaml")
+	if _, err := os.Stat(yamlPath); err == nil {
+		return LoadConfigFromFile(yamlPath)
+	}
+
+	// Finally check for cpack.json
+	jsonPath := filepath.Join(dir, "cpack.json")
+	if _, err := os.Stat(jsonPath); err == nil {
+		return LoadConfigFromFile(jsonPath)
+	}
+
+	return nil, fmt.Errorf("no default config file found")
 }

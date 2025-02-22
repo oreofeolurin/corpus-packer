@@ -6,7 +6,8 @@ install:
 	go get -t -v ./...
 
 test: install
-	go test -race -v ./... -coverprofile=cover.out
+	go test -race -v ./... -coverprofile=cover.out 
+	go tool cover -func=cover.out -o cover.out
 
 coverage:
 	@total_coverage=$$(go tool cover -func=cover.out | grep total: | awk '{print $$3}' | sed 's/%//'); \
