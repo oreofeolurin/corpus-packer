@@ -32,22 +32,26 @@ Corpus Packer (cpack) is a powerful command-line tool built in Go for combining 
 
 Corpus Packer requires Go (version 1.16 or higher) to build from source.
 
-### Using go install
+### Using go install (Recommended)
 
-Install directly using the following command:
+The easiest way to install is using Go's built-in package management:
 
-```
+```bash
 go install github.com/oreofeolurin/corpus-packer/cpack@latest
 ```
 
+This will download and install the latest version of cpack. The binary will be installed to your `$GOPATH/bin` directory.
+
+Make sure your `$GOPATH/bin` directory is in your system's PATH to use the `cpack` command from anywhere.
+
 ### Building from Source
 
-Clone the repository and build it with:
+Alternatively, you can build from source:
 
-```
+```bash
 git clone https://github.com/oreofeolurin/corpus-packer.git
 cd corpus-packer
-go build -o cpack
+go build -o cpack ./cpack
 ```
 
 ## Usage
@@ -62,17 +66,17 @@ Alternatively, you can specify an input directory, output file, or filtering opt
 
 ## Command Line Options
 
-| Flag               | Short | Description                                           | Default           |
-|-------------------|-------|-------------------------------------------------------|-------------------|
-| `--dir`           | `-d`  | Input directory to process                            | Current directory |
-| `--output`        | `-o`  | Output file path                                      | corpus-out.txt    |
+| Flag               | Short | Description                                           | Default            |
+|-------------------|-------|-------------------------------------------------------|---------------------|
+| `--dir`           | `-d`  | Input directory to process                            | Current directory   |
+| `--output`        | `-o`  | Output file path                                      | corpus-out.txt      |
 | `--include`       | `-i`  | Glob patterns to include                              | All supported types |
-| `--exclude`       | `-x`  | Glob patterns to exclude                              | Common test/vendor |
-| `--compress`      | `-c`  | Compress output by removing whitespace                | false             |
-| `--max-compress`  | `-m`  | Maximum compression (remove comments)                  | false             |
-| `--gzip`          | `-z`  | Compress output file using gzip                       | false             |
-| `--base64`        | `-b`  | Base64 encode the output (use with --gzip)           | false             |
-| `--verbose`       | `-v`  | Include summary at start of output                    | false             |
+| `--exclude`       | `-x`  | Glob patterns to exclude                              | Common test/vendor  |
+| `--compress`      | `-c`  | Compress output by removing whitespace                | false               |
+| `--max-compress`  | `-m`  | Maximum compression (remove comments)                 | false               |
+| `--gzip`          | `-z`  | Compress output file using gzip                       | false               |
+| `--base64`        | `-b`  | Base64 encode the output (use with --gzip)            | false               |
+| `--verbose`       | `-v`  | Include summary at start of output                    | false               |
 
 ## Configuration File
 

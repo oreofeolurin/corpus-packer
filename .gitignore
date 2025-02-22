@@ -106,9 +106,6 @@ go.work
 *.swp
 *.swo
 
-# Output files
-corpus-out.txt
-
 # OS specific files
 .DS_Store
 .DS_Store?
@@ -117,3 +114,9 @@ corpus-out.txt
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Project specific files
+corpus-out.txt
+corpus-out.txt.gz
+*.gz
+*.b64
